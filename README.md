@@ -1,4 +1,4 @@
-# prj-neon-lander
+# prj-moonlander-js
 
 A modular, physics-based Lunar Lander simulation built with vanilla JavaScript and HTML5 Canvas.
 
