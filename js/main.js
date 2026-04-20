@@ -3,11 +3,13 @@ import { Terrain } from './terrain.js';
 import { UIManager } from './ui.js';
 import { Starfield } from './stars.js';
 import { Asteroid } from './asteroid.js';
+import { InputHandler } from './input.js';
 
 // --- Initialization ---
 const canvas = document.getElementById('game');
 const ctx = canvas.getContext('2d');
 
+// Standard PDP-11 Aspect Ratio
 canvas.width = 600;
 canvas.height = 400;
 
@@ -16,21 +18,15 @@ const moon = new Terrain(canvas.width, canvas.height);
 const ui = new UIManager(canvas.width, canvas.height);
 const stars = new Starfield(canvas.width, canvas.height);
 const hazard = new Asteroid(canvas.width, canvas.height);
+const input = new InputHandler();
 
-const keys = {};
 let gameState = "INTRO"; // INTRO, FLYING, LANDED, CRASHED
-
-let score = 0
-
-
-// --- Input Handling ---
-window.addEventListener('keydown', e => keys[e.key] = true);
-window.addEventListener('keyup', e => keys[e.key] = false);
+let score = 0;
 
 // --- Core Game Logic ---
 
 function checkCollision() {
-    // 1. ASTEROID COLLISION (Circle-based)
+    // 1. ASTEROID COLLISION
     if (hazard.active) {
         const dist = Math.hypot(player.x - hazard.x, player.y - hazard.y);
         if (dist < hazard.size + 8) {
@@ -39,7 +35,7 @@ function checkCollision() {
         }
     }
 
-    // 2. TERRAIN COLLISION (Line-based)
+    // 2. TERRAIN COLLISION
     const segmentWidth = canvas.width / (moon.points.length - 1);
     const index = Math.floor(player.x / segmentWidth);
     
@@ -52,31 +48,33 @@ function checkCollision() {
     const p1 = moon.points[index];
     const p2 = moon.points[index + 1];
 
-    // Linear Interpolation: Find height of jagged ground at player's X
+    // Find height of jagged ground at player's X
     const t = (player.x - p1.x) / (p2.x - p1.x);
     const terrainY = p1.y + t * (p2.y - p1.y);
 
-    // Collision check (lander height offset is 8 for the legs)
+    // Collision check (8px offset for the landing legs)
     if (player.y >= terrainY - 8) {
+        // Capture conditions BEFORE snapping velocity to 0
         const isOnPad = p1.isPad && p2.isPad;
         const isSlow = player.vy < 0.5;
         const isUpright = Math.abs(player.angle + Math.PI / 2) < 0.2;
 
-        // Snap to surface
+        // Snap to surface & stop movement
         player.y = terrainY - 8;
         player.vx = 0;
         player.vy = 0;
 
         if (isOnPad && isSlow && isUpright) {
-            score += 500;// + Math.floor(player.fuel);
             gameState = "LANDED";
+            // Calculate Score: Bonus + remaining fuel
+            score += 500 + Math.floor(player.fuel);
         } else {
             gameState = "CRASHED";
         }
     }
 }
 
-function resetGame() {
+function resetMission() {
     gameState = "FLYING";
     player.reset(canvas.width);
     moon.generate(canvas.width, canvas.height);
@@ -86,7 +84,7 @@ function resetGame() {
 // --- Main Loop ---
 
 function loop() {
-    // 1. Phosphor Persistence Blur
+    // 1. Phosphor Persistence Effect
     ctx.fillStyle = "rgba(0, 0, 0, 0.25)";
     ctx.fillRect(0, 0, canvas.width, canvas.height);
 
@@ -94,12 +92,16 @@ function loop() {
         stars.draw(ctx);
         moon.draw(ctx);
         ui.drawIntro(ctx);
-        if (keys[' ']) resetGame();
+        if (input.isThrusting()) resetMission();
     } 
 
     else if (gameState === "FLYING") {
-        // Update
-        player.update(keys[' '], keys['ArrowLeft'], keys['ArrowRight']);
+        // Update via Input Module
+        player.update(
+            input.isThrusting(), 
+            input.isRotatingLeft(), 
+            input.isRotatingRight()
+        );
         hazard.update();
         checkCollision();
 
@@ -112,19 +114,23 @@ function loop() {
     } 
 
     else {
-        // LANDED or CRASHED
+        // Results (LANDED or CRASHED)
         stars.draw(ctx);
         moon.draw(ctx);
         hazard.draw(ctx);
         player.draw(ctx);
         ui.drawResult(ctx, gameState, score);
 
-        if (keys['r'] || keys['R']) resetGame();
+        if (input.isResetting()) {
+            // Reset score if they crashed, or keep it if they landed
+            if (gameState === "CRASHED") score = 0; 
+            resetMission();
+        }
     }
 
     requestAnimationFrame(loop);
 }
 
-// Start Engine
+// Ignition
 loop();
 
